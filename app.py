@@ -8,7 +8,7 @@ st.set_page_config(layout="wide", page_title="Music Care Map")
 
 # COLLE TON LIEN CSV GOOGLE SHEET ICI ENTRE LES GUILLEMETS
 # Exemple: "https://docs.google.com/spreadsheets/d/e/2PACX.../pub?output=csv"
-SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS260Q3Tz1OIuDTZOu7ptoADnF26sjp3RLFOPYzylLZ77ZiP1KuA11-OzxNM6ktWkwL1qpylnWb1ZV4/pubhtml"
+SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS260Q3Tz1OIuDTZOu7ptoADnF26sjp3RLFOPYzylLZ77ZiP1KuA11-OzxNM6ktWkwL1qpylnWb1ZV4/pub?output=tsv"
 
 # --- TITRE DU SITE ---
 st.title("🗺️ Music Care - Suivi Commercial")
@@ -17,7 +17,7 @@ st.title("🗺️ Music Care - Suivi Commercial")
 @st.cache_data
 def load_data():
     # On lit le fichier CSV
-    data = pd.read_csv(SHEET_URL)
+    data = pd.read_csv(SHEET_URL, sep="\t")
     return data
 
 try:
