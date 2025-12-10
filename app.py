@@ -81,10 +81,10 @@ try:
         elif row["Statut"] == "Discussion":
             color = "orange"
             
-       folium.Marker(
+        folium.Marker(
             [row["Latitude"], row["Longitude"]],
             popup=f"<b>{row['Nom Établissement']}</b><br>Type: {row['Type']}<br>CA: {row['CA']}",
-            tooltip=row["Nom Établissement"],  # <--- C'est ici que tu avais oublié de corriger !
+            tooltip=row["Nom"],
             icon=folium.Icon(color=color, icon="info-sign")
         ).add_to(m)
 
