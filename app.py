@@ -10,16 +10,26 @@ st.set_page_config(layout="wide", page_title="Music Care CRM")
 SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS260Q3Tz1OIuDTZOu7ptoADnF26sjp3RLFOPYzylLZ77ZiP1KuA11-OzxNM6ktWkwL1qpylnWb1ZV4/pub?output=tsv"
 
 # --- FONCTION DE CHARGEMENT ---
-# Avant c'était juste : @st.cache_data
-# Maintenant, remplace par :
 @st.cache_data(ttl=300)
 def load_data():
     try:
         data = pd.read_csv(SHEET_URL, sep="\t")
-        # Nettoyage du CA : on s'assure que c'est bien des chiffres
+        
+        # Nettoyage du CA "Blindé"
         if "CA" in data.columns:
-            data["CA"] = data["CA"].astype(str).str.replace(" ", "").str.replace("€", "").str.replace(",", ".")
+            # 1. On convertit tout en texte d'abord
+            data["CA"] = data["CA"].astype(str)
+            
+            # 2. On remplace la virgule par un point (pour les décimales)
+            data["CA"] = data["CA"].str.replace(",", ".")
+            
+            # 3. La formule MAGIQUE : On enlève tout ce qui n'est PAS un chiffre ou un point
+            # Le r'[^\d.-]' est une expression régulière qui garde juste les chiffres
+            data["CA"] = data["CA"].str.replace(r'[^\d.-]', '', regex=True)
+            
+            # 4. On convertit en nombre
             data["CA"] = pd.to_numeric(data["CA"], errors='coerce').fillna(0)
+            
         return data
     except Exception as e:
         st.error("Erreur de lecture du fichier.")
