@@ -23,9 +23,6 @@ def load_data():
 try:
     df = load_data()
     
-    # --- AJOUTE CETTE LIGNE POUR VOIR LES COLONNES ---
-    st.write("🕵️ COLONNES DÉTECTÉES :", df.columns.tolist())
-    
     # --- FILTRES (Colonne de Gauche) ---
     with st.sidebar:
         st.header("Filtres")
