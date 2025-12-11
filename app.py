@@ -10,7 +10,9 @@ st.set_page_config(layout="wide", page_title="Music Care CRM")
 SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS260Q3Tz1OIuDTZOu7ptoADnF26sjp3RLFOPYzylLZ77ZiP1KuA11-OzxNM6ktWkwL1qpylnWb1ZV4/pub?output=tsv"
 
 # --- FONCTION DE CHARGEMENT ---
-@st.cache_data
+# Avant c'était juste : @st.cache_data
+# Maintenant, remplace par :
+@st.cache_data(ttl=60)
 def load_data():
     try:
         data = pd.read_csv(SHEET_URL, sep="\t")
