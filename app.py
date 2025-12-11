@@ -12,7 +12,7 @@ SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS260Q3Tz1OIuDTZOu7
 # --- FONCTION DE CHARGEMENT ---
 # Avant c'était juste : @st.cache_data
 # Maintenant, remplace par :
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=300)
 def load_data():
     try:
         data = pd.read_csv(SHEET_URL, sep="\t")
