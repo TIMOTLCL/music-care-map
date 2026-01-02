@@ -2,8 +2,7 @@ import streamlit as st
 import pandas as pd
 import folium
 from streamlit_folium import st_folium
-from folium.plugins import MarkerCluster
-import unicodedata # Pour tuer les accents
+import unicodedata
 
 # --- CONFIGURATION DE LA PAGE ---
 st.set_page_config(layout="wide", page_title="Music Care CRM")
@@ -11,11 +10,10 @@ st.set_page_config(layout="wide", page_title="Music Care CRM")
 # --- TON LIEN GOOGLE SHEET ---
 SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS260Q3Tz1OIuDTZOu7ptoADnF26sjp3RLFOPYzylLZ77ZiP1KuA11-OzxNM6ktWkwL1qpylnWb1ZV4/pub?output=tsv"
 
-# --- FONCTION DE NETTOYAGE DES ACCENTS ---
+# --- FONCTION DE NETTOYAGE DES ACCENTS (Indispensable pour les couleurs) ---
 def remove_accents(input_str):
     if not isinstance(input_str, str):
         return str(input_str)
-    # Cette formule magique transforme "é" en "e", "à" en "a", etc.
     nfkd_form = unicodedata.normalize('NFKD', input_str)
     return "".join([c for c in nfkd_form if not unicodedata.combining(c)])
 
@@ -33,29 +31,25 @@ def load_data():
             data["CA"] = data["CA"].astype(str).str.replace(",", ".").str.replace(r'[^\d.-]', '', regex=True)
             data["CA"] = pd.to_numeric(data["CA"], errors='coerce').fillna(0)
 
-        # 3. CRÉATION D'UNE COLONNE "STATUT PROPRE" (Sans accents, minuscule)
+        # 3. Création colonne "Statut_Clean" pour la logique couleur
         if "Statut" in data.columns:
-            # On crée une version simplifiée pour l'ordinateur (ex: "Résilié" -> "resilie")
             data["Statut_Clean"] = data["Statut"].apply(lambda x: remove_accents(str(x)).lower().strip())
             
         return data
     except Exception as e:
-        st.error(f"Erreur : {e}")
+        st.error(f"Erreur de lecture : {e}")
         return pd.DataFrame()
 
 df = load_data()
 
 # --- TITRE ---
-st.title("🚧 TEST V5 - LE CODE A CHANGÉ 🚧")
+st.title("📊 Music Care - Pilotage Commercial")
 
 if not df.empty and "Latitude" in df.columns:
     
-    # --- DEBUG RAPIDE (Pour voir ce que le code voit) ---
+    # --- BARRE LATÉRALE ---
     with st.sidebar:
         st.header("🔍 Filtres")
-        if "Statut_Clean" in df.columns:
-            with st.expander("🕵️ Voir les statuts détectés"):
-                st.write(df["Statut_Clean"].unique())
 
         # 1. Région
         if "Région" in df.columns:
@@ -73,12 +67,13 @@ if not df.empty and "Latitude" in df.columns:
             selected_dept = st.selectbox("2. Département", dept_list)
         else: selected_dept = "Tous"
 
-        # 3. Type / 4. Statut
+        # 3. Type
         if "Type" in df.columns:
             type_list = ["Tous"] + sorted(list(df["Type"].dropna().unique()))
             selected_type = st.selectbox("3. Type", type_list)
         else: selected_type = "Tous"
         
+        # 4. Statut
         if "Statut" in df.columns:
             statut_list = ["Tous"] + sorted(list(df["Statut"].dropna().unique()))
             selected_statut = st.selectbox("4. Statut", statut_list)
@@ -91,18 +86,22 @@ if not df.empty and "Latitude" in df.columns:
     if selected_type != "Tous": df_filtered = df_filtered[df_filtered["Type"] == selected_type]
     if selected_statut != "Tous": df_filtered = df_filtered[df_filtered["Statut"] == selected_statut]
 
-    # --- KPI ---
+    # --- KPI (CHIFFRES CLÉS) ---
     total_etablissements = len(df_filtered)
     total_ca = df_filtered["CA"].sum()
+    
+    # Calculs basés sur le "Statut_Clean" pour être précis
     nb_clients = len(df_filtered[df_filtered["Statut_Clean"].str.contains("client", na=False)])
     nb_prospects = len(df_filtered[df_filtered["Statut_Clean"].str.contains("prospect", na=False)])
+    nb_discussion = len(df_filtered[df_filtered["Statut_Clean"].str.contains("discussion", na=False)])
 
     st.markdown("---")
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns(5)
     col1.metric("🏢 Total", total_etablissements)
     col2.metric("💰 CA Total", f"{total_ca:,.0f} €".replace(",", " "))
     col3.metric("✅ Clients", nb_clients)
-    col4.metric("🎯 Prospects", nb_prospects)
+    col4.metric("💬 Discussion", nb_discussion)
+    col5.metric("🎯 Prospects", nb_prospects)
     st.markdown("---")
 
     # --- CARTE ---
@@ -118,42 +117,57 @@ if not df.empty and "Latitude" in df.columns:
             elif selected_region != "Toutes": zoom = 8
         else: center_lat, center_lon, zoom = 46.6, 1.8, 6
 
+        # Fond de carte 'CartoDB positron' pour un look pro et épuré
         m = folium.Map(location=[center_lat, center_lon], zoom_start=zoom, tiles="CartoDB positron")
-        marker_cluster = MarkerCluster().add_to(m)
 
+        # BOUCLE D'AFFICHAGE DES POINTS (SANS CLUSTER)
         for index, row in df_filtered.iterrows():
-            # ON UTILISE LA COLONNE NETTOYÉE (sans accents)
             statut_clean = str(row.get("Statut_Clean", ""))
             
-            # --- LOGIQUE COULEURS (SANS ACCENTS) ---
+            # --- COULEURS DÉFINITIVES ---
             if "client" in statut_clean:
                 color = "#2ecc71"  # VERT
+                radius = 6         # Un peu plus gros pour les clients
+                z_index = 1000     # Pour qu'ils s'affichent au-dessus des autres
             elif "discussion" in statut_clean:
                 color = "#3498db"  # BLEU
-            elif "refuse" in statut_clean: # Note: pas d'accent ici !
+                radius = 5
+                z_index = 900
+            elif "refuse" in statut_clean:
                 color = "#9b59b6"  # VIOLET
-            elif "resilie" in statut_clean: # Note: pas d'accent ici !
+                radius = 4
+                z_index = 100
+            elif "resilie" in statut_clean:
                 color = "#e74c3c"  # ROUGE
+                radius = 5
+                z_index = 500
             elif "prospect" in statut_clean:
                 color = "#95a5a6"  # GRIS
+                radius = 4
+                z_index = 100
             else:
-                color = "#000000"  # NOIR (Indique que le statut n'est pas reconnu)
+                color = "#95a5a6"  # GRIS par défaut
+                radius = 4
+                z_index = 100
 
-            # Popup de diagnostic
-            # On affiche le statut officiel (joli) ET le statut technique (clean) pour comprendre
+            # Contenu Info-bulle
             nom = row.get('Nom Établissement', 'Inconnu')
             statut_officiel = row.get('Statut', '-')
-            
+            type_etab = row.get('Type', '-')
+            ca = row.get('CA', 0)
+
             folium.CircleMarker(
                 location=[row["Latitude"], row["Longitude"]],
-                radius=7,
+                radius=radius,
                 color=color,
+                weight=1,          # Bordure fine
                 fill=True,
                 fill_color=color,
-                fill_opacity=0.9,
-                popup=f"<b>{nom}</b><br>Statut: {statut_officiel}<br><i>(Code voit: {statut_clean})</i>",
-                tooltip=nom
-            ).add_to(marker_cluster)
+                fill_opacity=0.8,
+                popup=f"<b>{nom}</b><br>{type_etab}<br>Statut: {statut_officiel}<br>CA: {ca} €",
+                tooltip=nom,
+                z_index_offset=z_index 
+            ).add_to(m)
 
         st_folium(m, width="100%", height=600)
 
@@ -168,4 +182,4 @@ if not df.empty and "Latitude" in df.columns:
         st.dataframe(df_filtered[["Nom Établissement", "Ville", "Statut", "CA"]], hide_index=True, use_container_width=True)
 
 else:
-    st.warning("⚠️ Problème de données.")
+    st.warning("⚠️ Données non chargées. Vérifie ton fichier.")
