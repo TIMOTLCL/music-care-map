@@ -16,7 +16,11 @@ def load_data():
     try:
         data = pd.read_csv(SHEET_URL, sep="\t")
         
-        # Nettoyage du CA
+        # 1. NETTOYAGE DES TITRES DE COLONNES (Enlève les espaces invisibles)
+        # Transforme "Statut " en "Statut"
+        data.columns = data.columns.str.strip()
+        
+        # 2. Nettoyage du CA
         if "CA" in data.columns:
             data["CA"] = data["CA"].astype(str)
             data["CA"] = data["CA"].str.replace(",", ".")
@@ -25,7 +29,7 @@ def load_data():
             
         return data
     except Exception as e:
-        st.error("Erreur de lecture du fichier.")
+        st.error(f"Erreur de lecture du fichier : {e}")
         return pd.DataFrame()
 
 df = load_data()
@@ -35,10 +39,20 @@ st.title("📊 Music Care - Pilotage Commercial")
 
 if not df.empty and "Latitude" in df.columns:
     
-    # --- BARRE LATÉRALE (FILTRES) ---
+    # --- DEBUG : AFFICHER CE QUE L'ORDI VOIT ---
+    # Cela va t'aider à comprendre pourquoi une couleur ne s'affiche pas
     with st.sidebar:
         st.header("🔍 Filtres")
         
+        # Section Debug pour vérifier les Statuts
+        with st.expander("🕵️ DEBUG : Vérifier mes Statuts"):
+            if "Statut" in df.columns:
+                st.write("Voici les statuts exacts trouvés dans ton fichier :")
+                st.write(df["Statut"].unique())
+            else:
+                st.error("Colonne 'Statut' introuvable ! Vérifie l'orthographe (Majuscule ?).")
+                st.write("Colonnes trouvées :", df.columns.tolist())
+
         # 1. Région
         if "Région" in df.columns:
             region_list = ["Toutes"] + sorted(list(df["Région"].dropna().unique()))
@@ -87,8 +101,13 @@ if not df.empty and "Latitude" in df.columns:
     total_etablissements = len(df_filtered)
     total_ca = df_filtered["CA"].sum()
     
-    nb_clients = len(df_filtered[df_filtered["Statut"].astype(str).str.contains("Client", case=False, na=False)])
-    nb_prospects = len(df_filtered[df_filtered["Statut"].astype(str).str.contains("Prospect", case=False, na=False)])
+    # Calculs KPI sécurisés
+    if "Statut" in df_filtered.columns:
+        nb_clients = len(df_filtered[df_filtered["Statut"].astype(str).str.contains("Client", case=False, na=False)])
+        nb_prospects = len(df_filtered[df_filtered["Statut"].astype(str).str.contains("Prospect", case=False, na=False)])
+    else:
+        nb_clients = 0
+        nb_prospects = 0
 
     st.markdown("---")
     col1, col2, col3, col4 = st.columns(4)
@@ -108,53 +127,48 @@ if not df.empty and "Latitude" in df.columns:
         if not df_filtered.empty:
             center_lat = df_filtered["Latitude"].mean()
             center_lon = df_filtered["Longitude"].mean()
-            if selected_dept != "Tous":
-                zoom = 10
-            elif selected_region != "Toutes":
-                zoom = 8
-            else:
-                zoom = 6
+            zoom = 6
+            if selected_dept != "Tous": zoom = 10
+            elif selected_region != "Toutes": zoom = 8
         else:
             center_lat, center_lon, zoom = 46.6, 1.8, 6
 
         m = folium.Map(location=[center_lat, center_lon], zoom_start=zoom, tiles="CartoDB positron")
-
-        # Cluster
         marker_cluster = MarkerCluster().add_to(m)
 
         for index, row in df_filtered.iterrows():
-            # On met le statut en minuscule pour la comparaison
-            statut = str(row["Statut"]).lower()
+            # On récupère le statut, on enlève les espaces autour, et on met en minuscule
+            statut_brut = str(row.get("Statut", "")).strip()
+            statut = statut_brut.lower()
             
-            # --- CORRECTION ICI : TOUT EN MINUSCULE ---
+            # --- LOGIQUE COULEURS STRICTE ---
             if "client" in statut:
-                color = "#2ecc71"  # VERT
-                radius = 8
+                color = "#2ecc71"  # VERT (Client)
             elif "discussion" in statut:
-                color = "#3498db"  # BLEU
-                radius = 7
+                color = "#3498db"  # BLEU (Discussion)
             elif "refusé" in statut or "refuse" in statut:
-                color = "#9b59b6"  # VIOLET
-                radius = 6
-            elif "résilié" in statut or "resilie" in statut:
-                color = "#e74c3c"  # ROUGE
-                radius = 6
+                color = "#9b59b6"  # VIOLET (Refusé)
+            elif "resilie" in statut or "résilié" in statut:
+                color = "#e74c3c"  # ROUGE (Résilié)
             elif "prospect" in statut:
-                color = "#95a5a6"  # GRIS
-                radius = 6
+                color = "#95a5a6"  # GRIS (Prospect)
             else:
-                color = "#95a5a6"  # GRIS par défaut
-                radius = 6
+                color = "#95a5a6"  # GRIS par défaut (Si ça ne matche rien)
+
+            # Contenu de la bulle info
+            nom = row.get('Nom Établissement', 'Inconnu')
+            type_etab = row.get('Type', '-')
+            ca = row.get('CA', 0)
 
             folium.CircleMarker(
                 location=[row["Latitude"], row["Longitude"]],
-                radius=radius,
+                radius=7,
                 color=color,
                 fill=True,
                 fill_color=color,
-                fill_opacity=0.8,
-                popup=f"<b>{row['Nom Établissement']}</b><br>{row['Type']}<br>Statut: {row['Statut']}<br>CA: {row['CA']} €",
-                tooltip=row["Nom Établissement"]
+                fill_opacity=0.9,
+                popup=f"<b>{nom}</b><br>{type_etab}<br>Statut: {statut_brut}<br>CA: {ca} €",
+                tooltip=nom
             ).add_to(marker_cluster)
 
         st_folium(m, width="100%", height=600)
@@ -168,11 +182,15 @@ if not df.empty and "Latitude" in df.columns:
             st.dataframe(ca_by_dept, use_container_width=True)
         
         st.caption("Liste filtrée")
+        cols_to_show = ["Nom Établissement", "Ville", "Statut", "CA"]
+        # On ne garde que les colonnes qui existent vraiment
+        cols_existantes = [c for c in cols_to_show if c in df_filtered.columns]
+        
         st.dataframe(
-            df_filtered[["Nom Établissement", "Ville", "Statut", "CA"]], 
+            df_filtered[cols_existantes], 
             hide_index=True,
             use_container_width=True
         )
 
 else:
-    st.warning("⚠️ Données non chargées ou colonnes GPS manquantes.")
+    st.warning("⚠️ Données non chargées. Regarde l'erreur ci-dessus.")
