@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import folium
 from streamlit_folium import st_folium
+from folium.plugins import MarkerCluster # L'outil magique pour la vitesse
 
 # --- CONFIGURATION DE LA PAGE ---
 st.set_page_config(layout="wide", page_title="Music Care CRM")
@@ -17,17 +18,9 @@ def load_data():
         
         # Nettoyage du CA "Blindé"
         if "CA" in data.columns:
-            # 1. On convertit tout en texte d'abord
             data["CA"] = data["CA"].astype(str)
-            
-            # 2. On remplace la virgule par un point (pour les décimales)
             data["CA"] = data["CA"].str.replace(",", ".")
-            
-            # 3. La formule MAGIQUE : On enlève tout ce qui n'est PAS un chiffre ou un point
-            # Le r'[^\d.-]' est une expression régulière qui garde juste les chiffres
             data["CA"] = data["CA"].str.replace(r'[^\d.-]', '', regex=True)
-            
-            # 4. On convertit en nombre
             data["CA"] = pd.to_numeric(data["CA"], errors='coerce').fillna(0)
             
         return data
@@ -40,110 +33,122 @@ df = load_data()
 # --- TITRE ---
 st.title("📊 Music Care - Pilotage Commercial")
 
-if not df.empty:
+if not df.empty and "Latitude" in df.columns:
     
-    # --- BARRE LATÉRALE (FILTRES EN ENTONNOIR) ---
+    # --- BARRE LATÉRALE (FILTRES) ---
     with st.sidebar:
         st.header("🔍 Filtres")
         
-        # 1. Filtre RÉGION
-        region_list = ["Toutes"] + sorted(list(df["Région"].unique()))
-        selected_region = st.selectbox("1. Région", region_list)
-        
-        # 2. Filtre DÉPARTEMENT (Dépendant de la région choisie)
-        if selected_region != "Toutes":
-            # On ne propose que les départements de la région choisie
-            dept_options = df[df["Région"] == selected_region]["Département"].unique()
-            dept_list = ["Tous"] + sorted(list(dept_options))
+        # 1. Région
+        if "Région" in df.columns:
+            region_list = ["Toutes"] + sorted(list(df["Région"].dropna().unique()))
+            selected_region = st.selectbox("1. Région", region_list)
         else:
-            dept_list = ["Tous"] + sorted(list(df["Département"].unique()))
-            
-        selected_dept = st.selectbox("2. Département", dept_list)
-
-        # 3. Filtre TYPE D'ÉTABLISSEMENT
-        type_list = ["Tous"] + sorted(list(df["Type"].unique()))
-        selected_type = st.selectbox("3. Type d'établissement", type_list)
+            selected_region = "Toutes"
         
-        # 4. Filtre STATUT
-        statut_list = ["Tous"] + sorted(list(df["Statut"].unique()))
-        selected_statut = st.selectbox("4. Statut", statut_list)
+        # 2. Département (Dynamique)
+        if "Département" in df.columns:
+            if selected_region != "Toutes":
+                dept_options = df[df["Région"] == selected_region]["Département"].unique()
+                dept_list = ["Tous"] + sorted(list(dept_options))
+            else:
+                dept_list = ["Tous"] + sorted(list(df["Département"].unique()))
+            selected_dept = st.selectbox("2. Département", dept_list)
+        else:
+            selected_dept = "Tous"
 
-    # --- APPLICATION DES FILTRES ---
+        # 3. Type
+        if "Type" in df.columns:
+            type_list = ["Tous"] + sorted(list(df["Type"].dropna().unique()))
+            selected_type = st.selectbox("3. Type d'établissement", type_list)
+        else:
+            selected_type = "Tous"
+        
+        # 4. Statut
+        if "Statut" in df.columns:
+            statut_list = ["Tous"] + sorted(list(df["Statut"].dropna().unique()))
+            selected_statut = st.selectbox("4. Statut", statut_list)
+        else:
+            selected_statut = "Tous"
+
+    # --- FILTRAGE DES DONNÉES ---
     df_filtered = df.copy()
     
     if selected_region != "Toutes":
         df_filtered = df_filtered[df_filtered["Région"] == selected_region]
-        
     if selected_dept != "Tous":
         df_filtered = df_filtered[df_filtered["Département"] == selected_dept]
-
     if selected_type != "Tous":
         df_filtered = df_filtered[df_filtered["Type"] == selected_type]
-
     if selected_statut != "Tous":
         df_filtered = df_filtered[df_filtered["Statut"] == selected_statut]
 
-    # --- TABLEAU DE BORD (DASHBOARD) ---
+    # --- DASHBOARD (KPI) ---
     total_etablissements = len(df_filtered)
     total_ca = df_filtered["CA"].sum()
     
-    # Calcul simplifié pour tes 3 statuts
-    # (On compte le nombre de lignes pour chaque statut)
-    nb_clients = len(df_filtered[df_filtered["Statut"].astype(str).str.contains("Client", case=False)])
-    nb_discussion = len(df_filtered[df_filtered["Statut"].astype(str).str.contains("Discussion", case=False)])
-    nb_prospects = len(df_filtered[df_filtered["Statut"].astype(str).str.contains("Prospect", case=False)])
+    # Calcul des statuts pour KPI (exemple simplifié)
+    nb_clients = len(df_filtered[df_filtered["Statut"].astype(str).str.contains("Client", case=False, na=False)])
+    nb_prospects = len(df_filtered[df_filtered["Statut"].astype(str).str.contains("Prospect", case=False, na=False)])
 
-    # Affichage des métriques
     st.markdown("---")
-    col1, col2, col3, col4, col5 = st.columns(5)
-    
-    col1.metric("🏢 Total", total_etablissements)
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("🏢 Total affiché", total_etablissements)
     col2.metric("💰 CA Total", f"{total_ca:,.0f} €".replace(",", " "))
     col3.metric("✅ Clients", nb_clients)
-    col4.metric("💬 Discussion", nb_discussion)
-    col5.metric("🎯 Prospects", nb_prospects)
+    col4.metric("🎯 Prospects", nb_prospects)
     st.markdown("---")
 
-    # --- LA CARTE ---
+    # --- CARTE INTERACTIVE ---
     col_map, col_details = st.columns([2, 1])
 
     with col_map:
-        st.subheader(f"Carte : {selected_region} > {selected_dept}")
+        st.subheader(f"Carte : {selected_region}")
         
-        # Centrage
-        if not df_filtered.empty and "Latitude" in df_filtered.columns:
+        # Centrage intelligent
+        if not df_filtered.empty:
             center_lat = df_filtered["Latitude"].mean()
             center_lon = df_filtered["Longitude"].mean()
             if selected_dept != "Tous":
-                zoom = 10 
+                zoom = 10
             elif selected_region != "Toutes":
                 zoom = 8
             else:
                 zoom = 6
         else:
-            center_lat, center_lon, zoom = 46.6, 1.9, 6
+            center_lat, center_lon, zoom = 46.6, 1.8, 6
 
-        # Carte
+        # Affichage carte
         m = folium.Map(location=[center_lat, center_lon], zoom_start=zoom, tiles="CartoDB positron")
 
-        # Ajout des POINTS avec les 3 COULEURS
+        # --- OPTIMISATION : CLUSTERING ---
+        # On crée un groupe de clusters pour gérer la fluidité avec 2100 points
+        marker_cluster = MarkerCluster().add_to(m)
+
         for index, row in df_filtered.iterrows():
             statut = str(row["Statut"]).lower()
             
-            # --- LOGIQUE DES COULEURS ---
+            # --- NOUVELLE LOGIQUE DES COULEURS ---
             if "client" in statut:
-                color = "#2ecc71"  # VERT
+                color = "#2ecc71"  # VERT (Client)
                 radius = 8
             elif "discussion" in statut:
-                color = "#e67e22"  # ORANGE
+                color = "#3498db"  # BLEU (Discussion)
                 radius = 7
+            elif "refusé" in statut or "refuse" in statut:
+                color = "#9b59b6"  # VIOLET (Refusé)
+                radius = 6
+            elif "résilié" in statut or "resilie" in statut:
+                color = "#e74c3c"  # ROUGE (Résilié)
+                radius = 6
             elif "prospect" in statut:
-                color = "#e74c3c"  # ROUGE
-                radius = 5
+                color = "#95a5a6"  # GRIS (Prospect)
+                radius = 6
             else:
-                color = "#95a5a6"  # GRIS (si erreur de nom)
-                radius = 5
+                color = "#95a5a6"  # GRIS par défaut
+                radius = 6
 
+            # On ajoute les points AU CLUSTER et non directement à la carte
             folium.CircleMarker(
                 location=[row["Latitude"], row["Longitude"]],
                 radius=radius,
@@ -153,19 +158,19 @@ if not df.empty:
                 fill_opacity=0.8,
                 popup=f"<b>{row['Nom Établissement']}</b><br>{row['Type']}<br>Statut: {row['Statut']}<br>CA: {row['CA']} €",
                 tooltip=row["Nom Établissement"]
-            ).add_to(m)
+            ).add_to(marker_cluster)
 
         st_folium(m, width="100%", height=600)
 
     # --- DÉTAILS ---
     with col_details:
-        st.subheader("Détails chiffrés")
+        st.subheader("Détails")
         if selected_region != "Toutes" and selected_dept == "Tous":
-            st.write("📊 **CA par Département :**")
+            st.caption("CA par Département")
             ca_by_dept = df_filtered.groupby("Département")["CA"].sum().sort_values(ascending=False)
-            st.dataframe(ca_by_dept)
+            st.dataframe(ca_by_dept, use_container_width=True)
         
-        st.write("📋 **Liste :**")
+        st.caption("Liste filtrée")
         st.dataframe(
             df_filtered[["Nom Établissement", "Ville", "Statut", "CA"]], 
             hide_index=True,
@@ -173,4 +178,4 @@ if not df.empty:
         )
 
 else:
-    st.warning("Aucune donnée chargée.")
+    st.warning("⚠️ Données non chargées ou colonnes GPS manquantes.")
