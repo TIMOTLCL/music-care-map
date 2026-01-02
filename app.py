@@ -129,19 +129,19 @@ if not df.empty and "Latitude" in df.columns:
             statut = str(row["Statut"]).lower()
             
             # --- NOUVELLE LOGIQUE DES COULEURS ---
-            if "client" in statut:
+            if "Client" in statut:
                 color = "#2ecc71"  # VERT (Client)
                 radius = 8
-            elif "discussion" in statut:
+            elif "Discussion" in statut:
                 color = "#3498db"  # BLEU (Discussion)
                 radius = 7
-            elif "refusé" in statut or "refuse" in statut:
+            elif "Refusé" in statut or "refuse" in statut:
                 color = "#9b59b6"  # VIOLET (Refusé)
                 radius = 6
-            elif "résilié" in statut or "resilie" in statut:
+            elif "Résilié" in statut or "resilie" in statut:
                 color = "#e74c3c"  # ROUGE (Résilié)
                 radius = 6
-            elif "prospect" in statut:
+            elif "Prospect" in statut:
                 color = "#95a5a6"  # GRIS (Prospect)
                 radius = 6
             else:
