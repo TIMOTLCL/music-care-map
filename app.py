@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import folium
 from streamlit_folium import st_folium
-from folium.plugins import MarkerCluster # L'outil magique pour la vitesse
+from folium.plugins import MarkerCluster
 
 # --- CONFIGURATION DE LA PAGE ---
 st.set_page_config(layout="wide", page_title="Music Care CRM")
@@ -16,7 +16,7 @@ def load_data():
     try:
         data = pd.read_csv(SHEET_URL, sep="\t")
         
-        # Nettoyage du CA "Blindé"
+        # Nettoyage du CA
         if "CA" in data.columns:
             data["CA"] = data["CA"].astype(str)
             data["CA"] = data["CA"].str.replace(",", ".")
@@ -46,7 +46,7 @@ if not df.empty and "Latitude" in df.columns:
         else:
             selected_region = "Toutes"
         
-        # 2. Département (Dynamique)
+        # 2. Département
         if "Département" in df.columns:
             if selected_region != "Toutes":
                 dept_options = df[df["Région"] == selected_region]["Département"].unique()
@@ -71,7 +71,7 @@ if not df.empty and "Latitude" in df.columns:
         else:
             selected_statut = "Tous"
 
-    # --- FILTRAGE DES DONNÉES ---
+    # --- FILTRAGE ---
     df_filtered = df.copy()
     
     if selected_region != "Toutes":
@@ -83,11 +83,10 @@ if not df.empty and "Latitude" in df.columns:
     if selected_statut != "Tous":
         df_filtered = df_filtered[df_filtered["Statut"] == selected_statut]
 
-    # --- DASHBOARD (KPI) ---
+    # --- KPI ---
     total_etablissements = len(df_filtered)
     total_ca = df_filtered["CA"].sum()
     
-    # Calcul des statuts pour KPI (exemple simplifié)
     nb_clients = len(df_filtered[df_filtered["Statut"].astype(str).str.contains("Client", case=False, na=False)])
     nb_prospects = len(df_filtered[df_filtered["Statut"].astype(str).str.contains("Prospect", case=False, na=False)])
 
@@ -99,13 +98,13 @@ if not df.empty and "Latitude" in df.columns:
     col4.metric("🎯 Prospects", nb_prospects)
     st.markdown("---")
 
-    # --- CARTE INTERACTIVE ---
+    # --- CARTE ---
     col_map, col_details = st.columns([2, 1])
 
     with col_map:
         st.subheader(f"Carte : {selected_region}")
         
-        # Centrage intelligent
+        # Centrage
         if not df_filtered.empty:
             center_lat = df_filtered["Latitude"].mean()
             center_lon = df_filtered["Longitude"].mean()
@@ -118,37 +117,35 @@ if not df.empty and "Latitude" in df.columns:
         else:
             center_lat, center_lon, zoom = 46.6, 1.8, 6
 
-        # Affichage carte
         m = folium.Map(location=[center_lat, center_lon], zoom_start=zoom, tiles="CartoDB positron")
 
-        # --- OPTIMISATION : CLUSTERING ---
-        # On crée un groupe de clusters pour gérer la fluidité avec 2100 points
+        # Cluster
         marker_cluster = MarkerCluster().add_to(m)
 
         for index, row in df_filtered.iterrows():
+            # On met le statut en minuscule pour la comparaison
             statut = str(row["Statut"]).lower()
             
-            # --- NOUVELLE LOGIQUE DES COULEURS ---
-            if "Client" in statut:
-                color = "#2ecc71"  # VERT (Client)
+            # --- CORRECTION ICI : TOUT EN MINUSCULE ---
+            if "client" in statut:
+                color = "#2ecc71"  # VERT
                 radius = 8
-            elif "Discussion" in statut:
-                color = "#3498db"  # BLEU (Discussion)
+            elif "discussion" in statut:
+                color = "#3498db"  # BLEU
                 radius = 7
-            elif "Refusé" in statut or "refuse" in statut:
-                color = "#9b59b6"  # VIOLET (Refusé)
+            elif "refusé" in statut or "refuse" in statut:
+                color = "#9b59b6"  # VIOLET
                 radius = 6
-            elif "Résilié" in statut or "resilie" in statut:
-                color = "#e74c3c"  # ROUGE (Résilié)
+            elif "résilié" in statut or "resilie" in statut:
+                color = "#e74c3c"  # ROUGE
                 radius = 6
-            elif "Prospect" in statut:
-                color = "#95a5a6"  # GRIS (Prospect)
+            elif "prospect" in statut:
+                color = "#95a5a6"  # GRIS
                 radius = 6
             else:
                 color = "#95a5a6"  # GRIS par défaut
                 radius = 6
 
-            # On ajoute les points AU CLUSTER et non directement à la carte
             folium.CircleMarker(
                 location=[row["Latitude"], row["Longitude"]],
                 radius=radius,
