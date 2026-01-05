@@ -20,22 +20,22 @@ def remove_accents(input_str):
 def load_data():
     try:
         data = pd.read_csv(SHEET_URL, sep="\t")
-        data.columns = data.columns.str.strip() # Nettoyage titres
+        data.columns = data.columns.str.strip() # Nettoyage titres colonnes
         
         # Nettoyage CA
         if "CA" in data.columns:
             data["CA"] = data["CA"].astype(str).str.replace(",", ".").str.replace(r'[^\d.-]', '', regex=True)
             data["CA"] = pd.to_numeric(data["CA"], errors='coerce').fillna(0)
 
-        # Statut Clean pour les couleurs
+        # Statut Clean
         if "Statut" in data.columns:
             data["Statut_Clean"] = data["Statut"].apply(lambda x: remove_accents(str(x)).lower().strip())
         
-        # Création d'une colonne pour la barre de recherche (Nom + Ville)
+        # Colonne Recherche
         if "Nom Établissement" in data.columns and "Ville" in data.columns:
             data["Recherche"] = data["Nom Établissement"] + " (" + data["Ville"] + ")"
         else:
-            data["Recherche"] = data.index.astype(str) # Fallback si pas de colonnes
+            data["Recherche"] = data.index.astype(str)
             
         return data
     except Exception as e:
@@ -49,20 +49,19 @@ st.title("🎵 Music Care - Pilotage Commercial")
 
 if not df.empty and "Latitude" in df.columns:
     
-    # --- BARRE LATÉRALE ---
+    # --- SIDEBAR ---
     with st.sidebar:
         st.header("🔍 Outils & Filtres")
 
-        # --- NOUVEAUTÉ : BARRE DE RECHERCHE ---
+        # RECHERCHE
         st.markdown("### ⚡ Recherche Rapide")
-        # On trie la liste pour que ce soit facile à trouver
         search_options = ["-"] + sorted(list(df["Recherche"].unique()))
         search_target = st.selectbox("Trouver un établissement :", search_options)
         
         st.markdown("---")
         st.markdown("### 🌪️ Filtres")
 
-        # Filtres classiques
+        # Filtres
         if "Région" in df.columns:
             region_list = ["Toutes"] + sorted(list(df["Région"].dropna().unique()))
             selected_region = st.selectbox("1. Région", region_list)
@@ -87,15 +86,13 @@ if not df.empty and "Latitude" in df.columns:
             selected_statut = st.selectbox("4. Statut", statut_list)
         else: selected_statut = "Tous"
 
-    # --- LOGIQUE DE FILTRAGE ---
+    # --- LOGIQUE FILTRE ---
     df_filtered = df.copy()
     
-    # Si la recherche est utilisée, elle gagne sur les filtres
     if search_target != "-":
         df_filtered = df_filtered[df_filtered["Recherche"] == search_target]
         st.info(f"📍 Focus sur : **{search_target}**")
     else:
-        # Sinon on applique les filtres normaux
         if selected_region != "Toutes": df_filtered = df_filtered[df_filtered["Région"] == selected_region]
         if selected_dept != "Tous": df_filtered = df_filtered[df_filtered["Département"] == selected_dept]
         if selected_type != "Tous": df_filtered = df_filtered[df_filtered["Type"] == selected_type]
@@ -121,12 +118,9 @@ if not df.empty and "Latitude" in df.columns:
     col_map, col_details = st.columns([2, 1])
 
     with col_map:
-        # Gestion du Zoom Intelligent
         if not df_filtered.empty:
             center_lat = df_filtered["Latitude"].mean()
             center_lon = df_filtered["Longitude"].mean()
-            
-            # Si on a 1 seul résultat (Recherche), on zoome très fort (15)
             if len(df_filtered) == 1: zoom = 15 
             elif selected_dept != "Tous": zoom = 10
             elif selected_region != "Toutes": zoom = 8
@@ -138,7 +132,7 @@ if not df.empty and "Latitude" in df.columns:
         for index, row in df_filtered.iterrows():
             statut_clean = str(row.get("Statut_Clean", ""))
             
-            # Couleurs (Logique V5 conservée)
+            # Couleurs
             if "client" in statut_clean: color, radius, z_idx = "#2ecc71", 6, 1000
             elif "discussion" in statut_clean: color, radius, z_idx = "#3498db", 5, 900
             elif "refuse" in statut_clean: color, radius, z_idx = "#9b59b6", 4, 100
@@ -146,16 +140,50 @@ if not df.empty and "Latitude" in df.columns:
             elif "prospect" in statut_clean: color, radius, z_idx = "#95a5a6", 4, 100
             else: color, radius, z_idx = "#95a5a6", 4, 100
 
-            # Contenu Info-bulle (Simple et propre)
+            # --- CRÉATION DU LIEN HUBSPOT ---
+            lien_hubspot = str(row.get('Lien HubSpot', '')) # On récupère le lien
+            bouton_html = ""
+            
+            # Si le lien contient "http", on crée le bouton
+            if "http" in lien_hubspot and str(lien_hubspot) != "nan":
+                bouton_html = f"""
+                <br>
+                <a href="{lien_hubspot}" target="_blank" style="
+                    display: inline-block;
+                    background-color: #ff7a59; 
+                    color: white; 
+                    padding: 8px 12px; 
+                    text-decoration: none; 
+                    border-radius: 4px; 
+                    font-size: 12px;
+                    font-weight: bold;
+                    margin-top: 8px;">
+                    🟠 Ouvrir HubSpot
+                </a>
+                """
+
+            # Contenu Popup
             nom = row.get('Nom Établissement', 'Inconnu')
             statut_officiel = row.get('Statut', '-')
             type_etab = row.get('Type', '-')
             ca = row.get('CA', 0)
 
+            # On injecte le bouton_html à la fin du popup
+            popup_content = f"""
+            <div style="font-family: sans-serif; width: 220px;">
+                <b>{nom}</b><br>
+                <i style="color:gray;">{type_etab}</i><br>
+                <hr style="margin: 5px 0;">
+                Statut: <b>{statut_officiel}</b><br>
+                CA: {ca} €
+                {bouton_html}
+            </div>
+            """
+
             folium.CircleMarker(
                 location=[row["Latitude"], row["Longitude"]],
                 radius=radius, color=color, weight=1, fill=True, fill_color=color, fill_opacity=0.8,
-                popup=f"<b>{nom}</b><br>{type_etab}<br>Statut: {statut_officiel}<br>CA: {ca} €",
+                popup=folium.Popup(popup_content, max_width=250),
                 tooltip=nom, z_index_offset=z_idx 
             ).add_to(m)
 
@@ -169,7 +197,16 @@ if not df.empty and "Latitude" in df.columns:
             ca_by_dept = df_filtered.groupby("Département")["CA"].sum().sort_values(ascending=False)
             st.dataframe(ca_by_dept, use_container_width=True)
         
-        st.dataframe(df_filtered[["Nom Établissement", "Ville", "Statut", "CA"]], hide_index=True, use_container_width=True)
+        # On configure le tableau pour que la colonne Lien HubSpot soit cliquable aussi
+        st.dataframe(
+            df_filtered, 
+            column_config={
+                "Lien HubSpot": st.column_config.LinkColumn("Lien CRM", display_text="Ouvrir")
+            },
+            column_order=["Nom Établissement", "Ville", "Statut", "CA", "Lien HubSpot"],
+            hide_index=True,
+            use_container_width=True
+        )
 
 else:
     st.warning("⚠️ Données non chargées.")
