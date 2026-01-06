@@ -37,6 +37,12 @@ def load_data():
         else:
             data["Recherche"] = data.index.astype(str)
             
+        # Gestion de la colonne Visite (si elle est vide ou n'existe pas, on remplit par "-")
+        if "Visite prévue" not in data.columns:
+            data["Visite prévue"] = "-"
+        else:
+            data["Visite prévue"] = data["Visite prévue"].fillna("-").astype(str)
+            
         return data
     except Exception as e:
         st.error(f"Erreur de lecture : {e}")
@@ -60,8 +66,11 @@ if not df.empty and "Latitude" in df.columns:
         
         st.markdown("---")
         st.markdown("### 🌪️ Filtres")
+        
+        # --- NOUVEAU : FILTRE VISITES ---
+        show_visits_only = st.checkbox("📅 Uniquement visites prévues")
 
-        # Filtres
+        # Filtres classiques
         if "Région" in df.columns:
             region_list = ["Toutes"] + sorted(list(df["Région"].dropna().unique()))
             selected_region = st.selectbox("1. Région", region_list)
@@ -93,6 +102,13 @@ if not df.empty and "Latitude" in df.columns:
         df_filtered = df_filtered[df_filtered["Recherche"] == search_target]
         st.info(f"📍 Focus sur : **{search_target}**")
     else:
+        # Filtre Visite (Nouveau)
+        if show_visits_only:
+            # On garde seulement les lignes où "Visite prévue" n'est pas un tiret "-" ou vide
+            df_filtered = df_filtered[df_filtered["Visite prévue"].str.len() > 1]
+            if df_filtered.empty:
+                st.warning("Aucune visite prévue trouvée.")
+
         if selected_region != "Toutes": df_filtered = df_filtered[df_filtered["Région"] == selected_region]
         if selected_dept != "Tous": df_filtered = df_filtered[df_filtered["Département"] == selected_dept]
         if selected_type != "Tous": df_filtered = df_filtered[df_filtered["Type"] == selected_type]
@@ -140,27 +156,21 @@ if not df.empty and "Latitude" in df.columns:
             elif "prospect" in statut_clean: color, radius, z_idx = "#95a5a6", 4, 100
             else: color, radius, z_idx = "#95a5a6", 4, 100
 
-            # --- CRÉATION DU LIEN HUBSPOT ---
-            lien_hubspot = str(row.get('Lien HubSpot', '')) # On récupère le lien
+            # --- GESTION LIEN HUBSPOT ---
+            lien_hubspot = str(row.get('Lien HubSpot', ''))
             bouton_html = ""
-            
-            # Si le lien contient "http", on crée le bouton
             if "http" in lien_hubspot and str(lien_hubspot) != "nan":
                 bouton_html = f"""
                 <br>
-                <a href="{lien_hubspot}" target="_blank" style="
-                    display: inline-block;
-                    background-color: #ff7a59; 
-                    color: white; 
-                    padding: 8px 12px; 
-                    text-decoration: none; 
-                    border-radius: 4px; 
-                    font-size: 12px;
-                    font-weight: bold;
-                    margin-top: 8px;">
-                    🟠 Ouvrir HubSpot
-                </a>
+                <a href="{lien_hubspot}" target="_blank" style="display: inline-block; background-color: #ff7a59; color: white; padding: 6px 10px; text-decoration: none; border-radius: 4px; font-size: 11px; margin-top: 5px;">🟠 HubSpot</a>
                 """
+
+            # --- GESTION INFO VISITE ---
+            visite_info = str(row.get('Visite prévue', '-'))
+            visite_html = ""
+            # Si le texte contient autre chose qu'un tiret, on l'affiche
+            if len(visite_info) > 1 and visite_info != "nan":
+                visite_html = f"<br>📅 <b>Visite : {visite_info}</b>"
 
             # Contenu Popup
             nom = row.get('Nom Établissement', 'Inconnu')
@@ -168,7 +178,6 @@ if not df.empty and "Latitude" in df.columns:
             type_etab = row.get('Type', '-')
             ca = row.get('CA', 0)
 
-            # On injecte le bouton_html à la fin du popup
             popup_content = f"""
             <div style="font-family: sans-serif; width: 220px;">
                 <b>{nom}</b><br>
@@ -176,6 +185,7 @@ if not df.empty and "Latitude" in df.columns:
                 <hr style="margin: 5px 0;">
                 Statut: <b>{statut_officiel}</b><br>
                 CA: {ca} €
+                {visite_html}
                 {bouton_html}
             </div>
             """
@@ -197,13 +207,17 @@ if not df.empty and "Latitude" in df.columns:
             ca_by_dept = df_filtered.groupby("Département")["CA"].sum().sort_values(ascending=False)
             st.dataframe(ca_by_dept, use_container_width=True)
         
-        # On configure le tableau pour que la colonne Lien HubSpot soit cliquable aussi
+        # Colonnes à afficher
+        cols_display = ["Nom Établissement", "Ville", "Statut", "CA", "Lien HubSpot", "Visite prévue"]
+        # On ne garde que celles qui existent vraiment
+        cols_final = [c for c in cols_display if c in df_filtered.columns]
+
         st.dataframe(
             df_filtered, 
             column_config={
                 "Lien HubSpot": st.column_config.LinkColumn("Lien CRM", display_text="Ouvrir")
             },
-            column_order=["Nom Établissement", "Ville", "Statut", "CA", "Lien HubSpot"],
+            column_order=cols_final,
             hide_index=True,
             use_container_width=True
         )
