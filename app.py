@@ -37,11 +37,17 @@ def load_data():
         else:
             data["Recherche"] = data.index.astype(str)
             
-        # Gestion de la colonne Visite (si elle est vide ou n'existe pas, on remplit par "-")
+        # Gestion Visite
         if "Visite prévue" not in data.columns:
             data["Visite prévue"] = "-"
         else:
             data["Visite prévue"] = data["Visite prévue"].fillna("-").astype(str)
+
+        # Gestion Services
+        if "Services" not in data.columns:
+            data["Services"] = "-"
+        else:
+            data["Services"] = data["Services"].fillna("-").astype(str)
             
         return data
     except Exception as e:
@@ -67,15 +73,15 @@ if not df.empty and "Latitude" in df.columns:
         st.markdown("---")
         st.markdown("### 🌪️ Filtres")
         
-        # --- NOUVEAU : FILTRE VISITES ---
         show_visits_only = st.checkbox("📅 Uniquement visites prévues")
 
-        # Filtres classiques
+        # 1. Région
         if "Région" in df.columns:
             region_list = ["Toutes"] + sorted(list(df["Région"].dropna().unique()))
             selected_region = st.selectbox("1. Région", region_list)
         else: selected_region = "Toutes"
         
+        # 2. Département
         if "Département" in df.columns:
             if selected_region != "Toutes":
                 dept_options = df[df["Région"] == selected_region]["Département"].unique()
@@ -85,15 +91,25 @@ if not df.empty and "Latitude" in df.columns:
             selected_dept = st.selectbox("2. Département", dept_list)
         else: selected_dept = "Tous"
 
+        # 3. Type
         if "Type" in df.columns:
             type_list = ["Tous"] + sorted(list(df["Type"].dropna().unique()))
             selected_type = st.selectbox("3. Type", type_list)
         else: selected_type = "Tous"
         
+        # 4. Statut
         if "Statut" in df.columns:
             statut_list = ["Tous"] + sorted(list(df["Statut"].dropna().unique()))
             selected_statut = st.selectbox("4. Statut", statut_list)
         else: selected_statut = "Tous"
+
+        # 5. --- NOUVEAU : FILTRE SERVICES (MULTI-SELECT) ---
+        selected_services = []
+        if "Services" in df.columns:
+            # On récupère la liste des services (en excluant les vides "-")
+            services_options = sorted(list(df[df["Services"] != "-"] ["Services"].unique()))
+            # Le widget multiselect
+            selected_services = st.multiselect("5. Services (Choix multiple)", services_options)
 
     # --- LOGIQUE FILTRE ---
     df_filtered = df.copy()
@@ -102,17 +118,21 @@ if not df.empty and "Latitude" in df.columns:
         df_filtered = df_filtered[df_filtered["Recherche"] == search_target]
         st.info(f"📍 Focus sur : **{search_target}**")
     else:
-        # Filtre Visite (Nouveau)
+        # Filtre Visite
         if show_visits_only:
-            # On garde seulement les lignes où "Visite prévue" n'est pas un tiret "-" ou vide
             df_filtered = df_filtered[df_filtered["Visite prévue"].str.len() > 1]
-            if df_filtered.empty:
-                st.warning("Aucune visite prévue trouvée.")
+            if df_filtered.empty: st.warning("Aucune visite prévue trouvée.")
 
+        # Filtres classiques
         if selected_region != "Toutes": df_filtered = df_filtered[df_filtered["Région"] == selected_region]
         if selected_dept != "Tous": df_filtered = df_filtered[df_filtered["Département"] == selected_dept]
         if selected_type != "Tous": df_filtered = df_filtered[df_filtered["Type"] == selected_type]
         if selected_statut != "Tous": df_filtered = df_filtered[df_filtered["Statut"] == selected_statut]
+        
+        # --- FILTRE SERVICES ---
+        # Si la liste selected_services n'est pas vide, on filtre
+        if selected_services:
+            df_filtered = df_filtered[df_filtered["Services"].isin(selected_services)]
 
     # --- KPI ---
     total_etablissements = len(df_filtered)
@@ -156,7 +176,7 @@ if not df.empty and "Latitude" in df.columns:
             elif "prospect" in statut_clean: color, radius, z_idx = "#95a5a6", 4, 100
             else: color, radius, z_idx = "#95a5a6", 4, 100
 
-            # --- GESTION LIEN HUBSPOT ---
+            # HubSpot Button
             lien_hubspot = str(row.get('Lien HubSpot', ''))
             bouton_html = ""
             if "http" in lien_hubspot and str(lien_hubspot) != "nan":
@@ -165,14 +185,19 @@ if not df.empty and "Latitude" in df.columns:
                 <a href="{lien_hubspot}" target="_blank" style="display: inline-block; background-color: #ff7a59; color: white; padding: 6px 10px; text-decoration: none; border-radius: 4px; font-size: 11px; margin-top: 5px;">🟠 HubSpot</a>
                 """
 
-            # --- GESTION INFO VISITE ---
+            # Visite Info
             visite_info = str(row.get('Visite prévue', '-'))
             visite_html = ""
-            # Si le texte contient autre chose qu'un tiret, on l'affiche
             if len(visite_info) > 1 and visite_info != "nan":
                 visite_html = f"<br>📅 <b>Visite : {visite_info}</b>"
 
-            # Contenu Popup
+            # Services Info
+            services_info = str(row.get('Services', '-'))
+            services_html = ""
+            if len(services_info) > 1 and services_info != "nan" and services_info != "-":
+                services_html = f"🏥 Services: <i>{services_info}</i><br>"
+
+            # Popup
             nom = row.get('Nom Établissement', 'Inconnu')
             statut_officiel = row.get('Statut', '-')
             type_etab = row.get('Type', '-')
@@ -184,6 +209,7 @@ if not df.empty and "Latitude" in df.columns:
                 <i style="color:gray;">{type_etab}</i><br>
                 <hr style="margin: 5px 0;">
                 Statut: <b>{statut_officiel}</b><br>
+                {services_html}
                 CA: {ca} €
                 {visite_html}
                 {bouton_html}
@@ -207,9 +233,8 @@ if not df.empty and "Latitude" in df.columns:
             ca_by_dept = df_filtered.groupby("Département")["CA"].sum().sort_values(ascending=False)
             st.dataframe(ca_by_dept, use_container_width=True)
         
-        # Colonnes à afficher
-        cols_display = ["Nom Établissement", "Ville", "Statut", "CA", "Lien HubSpot", "Visite prévue"]
-        # On ne garde que celles qui existent vraiment
+        # Colonnes finales
+        cols_display = ["Nom Établissement", "Ville", "Statut", "Services", "CA", "Lien HubSpot", "Visite prévue"]
         cols_final = [c for c in cols_display if c in df_filtered.columns]
 
         st.dataframe(
