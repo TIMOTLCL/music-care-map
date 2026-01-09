@@ -103,12 +103,18 @@ if not df.empty and "Latitude" in df.columns:
             selected_statut = st.selectbox("4. Statut", statut_list)
         else: selected_statut = "Tous"
 
-        # 5. --- NOUVEAU : FILTRE SERVICES (MULTI-SELECT) ---
+        # 5. --- FILTRE SERVICES (INTELLIGENT) ---
         selected_services = []
         if "Services" in df.columns:
-            # On récupère la liste des services (en excluant les vides "-")
-            services_options = sorted(list(df[df["Services"] != "-"] ["Services"].unique()))
-            # Le widget multiselect
+            # On découpe les chaînes "Service A, Service B" pour avoir une liste unique propre
+            unique_services = set()
+            for items in df["Services"].dropna().astype(str):
+                if items != "-":
+                    # Google Sheets sépare par des virgules, on découpe :
+                    for item in items.split(","):
+                        unique_services.add(item.strip())
+            
+            services_options = sorted(list(unique_services))
             selected_services = st.multiselect("5. Services (Choix multiple)", services_options)
 
     # --- LOGIQUE FILTRE ---
@@ -129,10 +135,12 @@ if not df.empty and "Latitude" in df.columns:
         if selected_type != "Tous": df_filtered = df_filtered[df_filtered["Type"] == selected_type]
         if selected_statut != "Tous": df_filtered = df_filtered[df_filtered["Statut"] == selected_statut]
         
-        # --- FILTRE SERVICES ---
-        # Si la liste selected_services n'est pas vide, on filtre
+        # --- FILTRE SERVICES AVANCÉ ---
         if selected_services:
-            df_filtered = df_filtered[df_filtered["Services"].isin(selected_services)]
+            # On garde la ligne si UN des services cochés est présent dans la colonne (même au milieu d'autres)
+            # Cette fonction vérifie si "Neurologie" est dans "Neurologie, Pédiatrie"
+            mask = df_filtered["Services"].apply(lambda x: any(svc in str(x) for svc in selected_services))
+            df_filtered = df_filtered[mask]
 
     # --- KPI ---
     total_etablissements = len(df_filtered)
