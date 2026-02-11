@@ -20,7 +20,7 @@ def remove_accents(input_str):
 def load_data():
     try:
         data = pd.read_csv(SHEET_URL, sep="\t")
-        data.columns = data.columns.str.strip() # Nettoyage titres colonnes
+        data.columns = data.columns.str.strip() 
         
         # Nettoyage CA
         if "CA" in data.columns:
@@ -103,14 +103,12 @@ if not df.empty and "Latitude" in df.columns:
             selected_statut = st.selectbox("4. Statut", statut_list)
         else: selected_statut = "Tous"
 
-        # 5. --- FILTRE SERVICES (INTELLIGENT) ---
+        # 5. FILTRE SERVICES
         selected_services = []
         if "Services" in df.columns:
-            # On découpe les chaînes "Service A, Service B" pour avoir une liste unique propre
             unique_services = set()
             for items in df["Services"].dropna().astype(str):
                 if items != "-":
-                    # Google Sheets sépare par des virgules, on découpe :
                     for item in items.split(","):
                         unique_services.add(item.strip())
             
@@ -124,38 +122,47 @@ if not df.empty and "Latitude" in df.columns:
         df_filtered = df_filtered[df_filtered["Recherche"] == search_target]
         st.info(f"📍 Focus sur : **{search_target}**")
     else:
-        # Filtre Visite
         if show_visits_only:
             df_filtered = df_filtered[df_filtered["Visite prévue"].str.len() > 1]
             if df_filtered.empty: st.warning("Aucune visite prévue trouvée.")
 
-        # Filtres classiques
         if selected_region != "Toutes": df_filtered = df_filtered[df_filtered["Région"] == selected_region]
         if selected_dept != "Tous": df_filtered = df_filtered[df_filtered["Département"] == selected_dept]
         if selected_type != "Tous": df_filtered = df_filtered[df_filtered["Type"] == selected_type]
         if selected_statut != "Tous": df_filtered = df_filtered[df_filtered["Statut"] == selected_statut]
         
-        # --- FILTRE SERVICES AVANCÉ ---
         if selected_services:
-            # On garde la ligne si UN des services cochés est présent dans la colonne (même au milieu d'autres)
-            # Cette fonction vérifie si "Neurologie" est dans "Neurologie, Pédiatrie"
             mask = df_filtered["Services"].apply(lambda x: any(svc in str(x) for svc in selected_services))
             df_filtered = df_filtered[mask]
 
-    # --- KPI ---
-    total_etablissements = len(df_filtered)
-    total_ca = df_filtered["CA"].sum()
-    nb_clients = len(df_filtered[df_filtered["Statut_Clean"].str.contains("client", na=False)])
-    nb_prospects = len(df_filtered[df_filtered["Statut_Clean"].str.contains("prospect", na=False)])
-    nb_discussion = len(df_filtered[df_filtered["Statut_Clean"].str.contains("discussion", na=False)])
-
+    # --- NOUVEAUX KPI (DASHBOARD FINANCIER) ---
     st.markdown("---")
-    col1, col2, col3, col4, col5 = st.columns(5)
-    col1.metric("🏢 Total", total_etablissements)
-    col2.metric("💰 CA Total", f"{total_ca:,.0f} €".replace(",", " "))
-    col3.metric("✅ Clients", nb_clients)
-    col4.metric("💬 Discussion", nb_discussion)
-    col5.metric("🎯 Prospects", nb_prospects)
+    
+    # Calculs des volumes
+    total_etablissements = len(df_filtered)
+    nb_clients = len(df_filtered[df_filtered["Statut_Clean"].str.contains("client", na=False)])
+    nb_discussion = len(df_filtered[df_filtered["Statut_Clean"].str.contains("discussion", na=False)])
+    nb_prospects = len(df_filtered[df_filtered["Statut_Clean"].str.contains("prospect", na=False)])
+
+    # Calculs Financiers (L'intelligence métier)
+    ca_total = df_filtered["CA"].sum()
+    ca_clients = df_filtered[df_filtered["Statut_Clean"].str.contains("client", na=False)]["CA"].sum()
+    ca_devis = df_filtered[df_filtered["Statut_Clean"].str.contains("discussion", na=False)]["CA"].sum()
+
+    # Affichage Ligne 1 : Volumes
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("🏢 Établissements (Filtre)", total_etablissements)
+    col2.metric("✅ Clients Actifs", nb_clients)
+    col3.metric("💬 En Discussion", nb_discussion)
+    col4.metric("🎯 Prospects", nb_prospects)
+    
+    st.write("") # Petit espace
+    
+    # Affichage Ligne 2 : Finances
+    colA, colB, colC = st.columns(3)
+    colA.metric("💰 CA Total Affiché", f"{ca_total:,.0f} €".replace(",", " "))
+    colB.metric("💶 CA Sécurisé (Clients)", f"{ca_clients:,.0f} €".replace(",", " "))
+    colC.metric("⏳ Pipeline Devis (Discussions)", f"{ca_devis:,.0f} €".replace(",", " "))
     st.markdown("---")
 
     # --- CARTE ---
@@ -176,7 +183,6 @@ if not df.empty and "Latitude" in df.columns:
         for index, row in df_filtered.iterrows():
             statut_clean = str(row.get("Statut_Clean", ""))
             
-            # Couleurs
             if "client" in statut_clean: color, radius, z_idx = "#2ecc71", 6, 1000
             elif "discussion" in statut_clean: color, radius, z_idx = "#3498db", 5, 900
             elif "refuse" in statut_clean: color, radius, z_idx = "#9b59b6", 4, 100
@@ -184,7 +190,6 @@ if not df.empty and "Latitude" in df.columns:
             elif "prospect" in statut_clean: color, radius, z_idx = "#95a5a6", 4, 100
             else: color, radius, z_idx = "#95a5a6", 4, 100
 
-            # HubSpot Button
             lien_hubspot = str(row.get('Lien HubSpot', ''))
             bouton_html = ""
             if "http" in lien_hubspot and str(lien_hubspot) != "nan":
@@ -193,23 +198,23 @@ if not df.empty and "Latitude" in df.columns:
                 <a href="{lien_hubspot}" target="_blank" style="display: inline-block; background-color: #ff7a59; color: white; padding: 6px 10px; text-decoration: none; border-radius: 4px; font-size: 11px; margin-top: 5px;">🟠 HubSpot</a>
                 """
 
-            # Visite Info
             visite_info = str(row.get('Visite prévue', '-'))
             visite_html = ""
             if len(visite_info) > 1 and visite_info != "nan":
                 visite_html = f"<br>📅 <b>Visite : {visite_info}</b>"
 
-            # Services Info
             services_info = str(row.get('Services', '-'))
             services_html = ""
             if len(services_info) > 1 and services_info != "nan" and services_info != "-":
                 services_html = f"🏥 Services: <i>{services_info}</i><br>"
 
-            # Popup
             nom = row.get('Nom Établissement', 'Inconnu')
             statut_officiel = row.get('Statut', '-')
             type_etab = row.get('Type', '-')
             ca = row.get('CA', 0)
+            
+            # Petit ajustement d'affichage selon si c'est un client ou un devis
+            label_ca = "CA" if "client" in statut_clean else "Devis" if "discussion" in statut_clean else "Montant"
 
             popup_content = f"""
             <div style="font-family: sans-serif; width: 220px;">
@@ -218,7 +223,7 @@ if not df.empty and "Latitude" in df.columns:
                 <hr style="margin: 5px 0;">
                 Statut: <b>{statut_officiel}</b><br>
                 {services_html}
-                CA: {ca} €
+                {label_ca}: {ca} €
                 {visite_html}
                 {bouton_html}
             </div>
@@ -241,7 +246,6 @@ if not df.empty and "Latitude" in df.columns:
             ca_by_dept = df_filtered.groupby("Département")["CA"].sum().sort_values(ascending=False)
             st.dataframe(ca_by_dept, use_container_width=True)
         
-        # Colonnes finales
         cols_display = ["Nom Établissement", "Ville", "Statut", "Services", "CA", "Lien HubSpot", "Visite prévue"]
         cols_final = [c for c in cols_display if c in df_filtered.columns]
 
